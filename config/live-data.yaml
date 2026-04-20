@@ -1,0 +1,1410 @@
+app:
+  # Maximum idle wait; the bot scans immediately when another pair is already due.
+  scan_interval_seconds: 300
+  risk_per_trade_pct: 0.01
+  position_value_pct: 0.01
+  # 20 requests at 11 seconds each are paced within each active scan cycle.
+  historical_request_budget: 20
+  # Timed-out pairs yield their slot so the dynamic universe can keep rotating.
+  historical_failure_retry_seconds: 3600
+  timeframe_refresh_seconds:
+    1h: 3600
+    2h: 7200
+    4h: 14400
+    1d: 86400
+    1wk: 604800
+    1mo: 2592000
+
+telegram:
+  enabled: true
+  bot_token_env: TELEGRAM_BOT_TOKEN
+  chat_id_env: TELEGRAM_CHAT_ID
+
+data_source:
+  default_provider: ibkr
+  providers:
+    ibkr:
+      host: 127.0.0.1
+      account_mode: paper
+      live_port: 4001
+      paper_port: 4002
+      profiles:
+        live_gateway:
+          host: 127.0.0.1
+          live_port: 4001
+          paper_port: 4002
+        paper_gateway:
+          host: 127.0.0.1
+          live_port: 4001
+          paper_port: 4002
+        live_tws:
+          host: 127.0.0.1
+          live_port: 7496
+          paper_port: 7497
+        paper_tws:
+          host: 127.0.0.1
+          live_port: 7496
+          paper_port: 7497
+      client_id: 7
+      read_only: true
+      min_rows: 220
+      timeout: 20
+      request_pause_seconds: 11.0
+      # Automatically resolve the active front-month futures contract at runtime.
+      auto_roll_futures: true
+      # Skip contracts expiring sooner than this many calendar days when possible.
+      min_days_to_expiry: 7
+      default_what_to_show: TRADES
+      # Match TWS charts with "Use RTH" enabled. Set use_rth: false on an
+      # individual instrument only when extended-hours candles are intentional.
+      default_use_rth: true
+    binance:
+      base_url: https://api.binance.com
+      min_rows: 220
+      timeout: 20
+
+universe:
+  enabled: true
+  database_path: data/universe.db
+  client_id: 18
+  snapshot_max_age_seconds: 21600
+  # Keep macro anchors always available; stocks and ETFs enter only through IBKR hot scans.
+  core_symbols: [ES, NQ, ESTX50, HSI, ZC, ZS, CL, GC, EURUSD, GBPUSD, USDJPY, AUDUSD, NZDUSD, USDCAD, USDCHF, EURGBP, EURJPY, GBPJPY, AUDJPY]
+  # Liquid individual shares from the maintained watchlist. These do not bypass
+  # qualification: each must pass the same weekly/monthly regime and daily
+  # alignment, countertrend-pullback, or neutral-pullback test as a scanner candidate.
+  watchlist_candidates: [AAPL, MSFT, NVDA, META, AMZN, GOOG, GOOGL, TSLA, ACGL, CASY, KO, COR, DD, HLT, HST, HWM, JKHY, KDP, LLY, MCD, MKC, NEM, PEP, PFE, PM, V, JPM, SNDK, ABBV, AXON, BX, CAH, CBOE, CCEP, CHRW, CMS, COST, DE, DOW, ECL, EME, ETR, FAST, FOX, HCA, HPQ, HUBB, IFF, ISRG, KMB, KR, LEN, LH, MSTR, MTB, NI, NKE, ORLY, PGR, SHOP, T, TER, TKO, TMUS, UBER, VRTX, WELL, ZBRA, AXA, AKE, BC, BGN, BN, BOL, DSFIR, EDEN, ENI, FRE, GFC, GLE, LDO, LOTB, SAF, TE, CVC, DTE]
+  # Qualify a priority segment of this list and reserve capacity for scanners.
+  watchlist_candidate_limit: 50
+  max_dynamic_candidates: 300
+  # Validate candidates from one five-year daily-history request, resampled into
+  # daily, weekly, and monthly closes. Weekly/monthly must agree; daily may
+  # align with the regime or be a countertrend pullback.
+  trend_filter:
+    enabled: true
+    interval: 1d
+    max_candidates: 75
+    fast_ema: 20
+    slow_ema: 50
+    slope_lookback: 5
+    min_ema_separation_pct: 0.01
+    # Retain the last qualified snapshot if Gateway loss prevents most checks.
+    minimum_qualification_coverage_pct: 0.80
+  sources:
+    - name: us_top_percent_gainers
+      enabled: true
+      # The current account's scanner entitlement supports this US equity bucket.
+      # EU retail accounts can be blocked from ETFs/ETNs/funds without a KID.
+      allowed_stock_types: [COMMON]
+      priority: 10
+      provider: ibkr
+      instrument: STK
+      location_code: STK.US.MAJOR
+      scan_code: TOP_PERC_GAIN
+      rows: 50
+      min_price: 10.0
+    - name: us_top_percent_losers
+      enabled: true
+      # Keep short-side opportunities on equal footing with upward momentum.
+      allowed_stock_types: [COMMON]
+      priority: 10
+      provider: ibkr
+      instrument: STK
+      location_code: STK.US.MAJOR
+      scan_code: TOP_PERC_LOSE
+      rows: 50
+      min_price: 10.0
+    - name: us_hot_by_volume
+      enabled: true
+      allowed_stock_types: [COMMON]
+      priority: 20
+      provider: ibkr
+      instrument: STK
+      location_code: STK.US.MAJOR
+      scan_code: HOT_BY_VOLUME
+      rows: 40
+      min_price: 10.0
+    - name: us_most_active
+      enabled: true
+      allowed_stock_types: [COMMON]
+      priority: 30
+      provider: ibkr
+      instrument: STK
+      location_code: STK.US.MAJOR
+      scan_code: MOST_ACTIVE
+      rows: 40
+      min_price: 10.0
+    - name: us_futures_gainers
+      enabled: true
+      priority: 15
+      provider: ibkr
+      instrument: FUT.US
+      location_code: FUT.US
+      scan_code: TOP_PERC_GAIN
+      rows: 15
+    - name: us_futures_losers
+      enabled: true
+      priority: 15
+      provider: ibkr
+      instrument: FUT.US
+      location_code: FUT.US
+      scan_code: TOP_PERC_LOSE
+      rows: 15
+    - name: north_american_futures_gainers
+      enabled: true
+      priority: 15
+      provider: ibkr
+      instrument: FUT.NA
+      location_code: FUT.NA
+      scan_code: TOP_PERC_GAIN
+      rows: 15
+    - name: north_american_futures_losers
+      enabled: true
+      priority: 15
+      provider: ibkr
+      instrument: FUT.NA
+      location_code: FUT.NA
+      scan_code: TOP_PERC_LOSE
+      rows: 15
+    - name: european_futures_gainers
+      enabled: true
+      priority: 15
+      provider: ibkr
+      instrument: FUT.EU
+      location_code: FUT.EU
+      scan_code: TOP_PERC_GAIN
+      rows: 15
+    - name: european_futures_losers
+      enabled: true
+      priority: 15
+      provider: ibkr
+      instrument: FUT.EU
+      location_code: FUT.EU
+      scan_code: TOP_PERC_LOSE
+      rows: 15
+    - name: asia_pacific_futures_gainers
+      enabled: true
+      priority: 15
+      provider: ibkr
+      instrument: FUT.HK
+      location_code: FUT.HK
+      scan_code: TOP_PERC_GAIN
+      rows: 15
+    - name: asia_pacific_futures_losers
+      enabled: true
+      priority: 15
+      provider: ibkr
+      instrument: FUT.HK
+      location_code: FUT.HK
+      scan_code: TOP_PERC_LOSE
+      rows: 15
+
+watchlist:
+  # Futures use the root symbol here; IBKR resolves the active contract automatically.
+  - symbol: ES
+    label: ES
+    asset_name: S&P500 Futures
+    provider: ibkr
+    provider_symbol: ES
+    asset_type: future
+    exchange: CME
+    currency: USD
+  - symbol: MES
+    label: MES
+    asset_name: Micro E-mini S&P500 Futures
+    provider: ibkr
+    provider_symbol: MES
+    asset_type: future
+    exchange: CME
+    currency: USD
+  - symbol: ESTX50
+    label: ESTX50
+    asset_name: Euro Stoxx 50 Futures
+    provider: ibkr
+    provider_symbol: ESTX50
+    asset_type: future
+    exchange: EUREX
+    currency: EUR
+  - symbol: HSI
+    label: HSI
+    asset_name: Hang Seng Index Futures
+    provider: ibkr
+    provider_symbol: HSI
+    asset_type: future
+    exchange: HKFE
+    currency: HKD
+  - symbol: EURUSD
+    label: 6E
+    asset_name: EURUSD
+    provider: ibkr
+    provider_symbol: EURUSD
+    asset_type: forex
+  - symbol: EURGBP
+    label: EURGBP
+    asset_name: EURGBP
+    provider: ibkr
+    provider_symbol: EURGBP
+    asset_type: forex
+  - symbol: AAPL
+    label: AAPL
+    asset_name: Apple
+    provider: ibkr
+    provider_symbol: AAPL
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: GOOG
+    label: GOOG
+    asset_name: Alphabet
+    provider: ibkr
+    provider_symbol: GOOG
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: GOOGL
+    label: GOOGL
+    asset_name: Alphabet
+    provider: ibkr
+    provider_symbol: GOOGL
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: MSFT
+    label: MSFT
+    asset_name: Microsoft
+    provider: ibkr
+    provider_symbol: MSFT
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: NQ
+    label: NQ
+    asset_name: Nasdaq 100 Futures
+    provider: ibkr
+    provider_symbol: NQ
+    asset_type: future
+    exchange: CME
+    currency: USD
+  - symbol: GBPUSD
+    label: GBPUSD
+    asset_name: GBPUSD
+    provider: ibkr
+    provider_symbol: GBPUSD
+    asset_type: forex
+  - symbol: USDJPY
+    label: USDJPY
+    asset_name: USDJPY
+    provider: ibkr
+    provider_symbol: USDJPY
+    asset_type: forex
+  - symbol: AUDUSD
+    label: AUDUSD
+    asset_name: AUDUSD
+    provider: ibkr
+    provider_symbol: AUDUSD
+    asset_type: forex
+  - symbol: NZDUSD
+    label: NZDUSD
+    asset_name: NZDUSD
+    provider: ibkr
+    provider_symbol: NZDUSD
+    asset_type: forex
+  - symbol: USDCAD
+    label: USDCAD
+    asset_name: USDCAD
+    provider: ibkr
+    provider_symbol: USDCAD
+    asset_type: forex
+  - symbol: USDCHF
+    label: USDCHF
+    asset_name: USDCHF
+    provider: ibkr
+    provider_symbol: USDCHF
+    asset_type: forex
+  - symbol: EURJPY
+    label: EURJPY
+    asset_name: EURJPY
+    provider: ibkr
+    provider_symbol: EURJPY
+    asset_type: forex
+  - symbol: GBPJPY
+    label: GBPJPY
+    asset_name: GBPJPY
+    provider: ibkr
+    provider_symbol: GBPJPY
+    asset_type: forex
+  - symbol: AUDJPY
+    label: AUDJPY
+    asset_name: AUDJPY
+    provider: ibkr
+    provider_symbol: AUDJPY
+    asset_type: forex
+  - symbol: DAX
+    label: DAX
+    asset_name: DAX Index
+    provider: ibkr
+    provider_symbol: DAX
+    asset_type: index
+    exchange: EUREX
+    currency: EUR
+  - symbol: ZC
+    label: ZC
+    asset_name: Corn Futures
+    provider: ibkr
+    provider_symbol: ZC
+    asset_type: future
+    exchange: CBOT
+    currency: USD
+  - symbol: ZS
+    label: ZS
+    asset_name: Soybean Futures
+    provider: ibkr
+    provider_symbol: ZS
+    asset_type: future
+    exchange: CBOT
+    currency: USD
+  - symbol: CL
+    label: CL
+    asset_name: Crude Oil Futures
+    provider: ibkr
+    provider_symbol: CL
+    asset_type: future
+    exchange: NYMEX
+    currency: USD
+  - symbol: GC
+    label: GC
+    asset_name: Gold Futures
+    provider: ibkr
+    provider_symbol: GC
+    asset_type: future
+    exchange: COMEX
+    currency: USD
+  - symbol: NVDA
+    label: NVDA
+    asset_name: NVIDIA
+    provider: ibkr
+    provider_symbol: NVDA
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: META
+    label: META
+    asset_name: Meta
+    provider: ibkr
+    provider_symbol: META
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: AMZN
+    label: AMZN
+    asset_name: Amazon
+    provider: ibkr
+    provider_symbol: AMZN
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: TSLA
+    label: TSLA
+    asset_name: Tesla
+    provider: ibkr
+    provider_symbol: TSLA
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: SPY
+    label: SPY
+    asset_name: SPDR S&P 500 ETF
+    provider: ibkr
+    provider_symbol: SPY
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: QQQ
+    label: QQQ
+    asset_name: Invesco QQQ ETF
+    provider: ibkr
+    provider_symbol: QQQ
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: GLD
+    label: GLD
+    asset_name: SPDR Gold Shares
+    provider: ibkr
+    provider_symbol: GLD
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: VTI
+    label: VTI
+    asset_name: Vanguard Total Stock Market ETF
+    provider: ibkr
+    provider_symbol: VTI
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: ACWI
+    label: ACWI
+    asset_name: iShares MSCI ACWI ETF
+    provider: ibkr
+    provider_symbol: ACWI
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: EFA
+    label: EFA
+    asset_name: iShares MSCI EAFE ETF
+    provider: ibkr
+    provider_symbol: EFA
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: EEM
+    label: EEM
+    asset_name: iShares MSCI Emerging Markets ETF
+    provider: ibkr
+    provider_symbol: EEM
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: VGK
+    label: VGK
+    asset_name: Vanguard FTSE Europe ETF
+    provider: ibkr
+    provider_symbol: VGK
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: EWJ
+    label: EWJ
+    asset_name: iShares MSCI Japan ETF
+    provider: ibkr
+    provider_symbol: EWJ
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: FXI
+    label: FXI
+    asset_name: iShares China Large-Cap ETF
+    provider: ibkr
+    provider_symbol: FXI
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: INDA
+    label: INDA
+    asset_name: iShares MSCI India ETF
+    provider: ibkr
+    provider_symbol: INDA
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: EWZ
+    label: EWZ
+    asset_name: iShares MSCI Brazil ETF
+    provider: ibkr
+    provider_symbol: EWZ
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: IWM
+    label: IWM
+    asset_name: iShares Russell 2000 ETF
+    provider: ibkr
+    provider_symbol: IWM
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ARCA
+    currency: USD
+  - symbol: TLT
+    label: TLT
+    asset_name: iShares 20+ Year Treasury Bond ETF
+    provider: ibkr
+    provider_symbol: TLT
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: ACGL
+    label: ACGL
+    asset_name: Arch Capital Group
+    provider: ibkr
+    provider_symbol: ACGL
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: CASY
+    label: CASY
+    asset_name: Casey's General Stores
+    provider: ibkr
+    provider_symbol: CASY
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: KO
+    label: KO
+    asset_name: Coca-Cola
+    provider: ibkr
+    provider_symbol: KO
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: COR
+    label: COR
+    asset_name: Cencora
+    provider: ibkr
+    provider_symbol: COR
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: DD
+    label: DD
+    asset_name: DuPont
+    provider: ibkr
+    provider_symbol: DD
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: HLT
+    label: HLT
+    asset_name: Hilton Worldwide
+    provider: ibkr
+    provider_symbol: HLT
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: HST
+    label: HST
+    asset_name: Host Hotels & Resorts
+    provider: ibkr
+    provider_symbol: HST
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: HWM
+    label: HWM
+    asset_name: Howmet Aerospace
+    provider: ibkr
+    provider_symbol: HWM
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: JKHY
+    label: JKHY
+    asset_name: Jack Henry & Associates
+    provider: ibkr
+    provider_symbol: JKHY
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: KDP
+    label: KDP
+    asset_name: Keurig Dr Pepper
+    provider: ibkr
+    provider_symbol: KDP
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: LLY
+    label: LLY
+    asset_name: Eli Lilly
+    provider: ibkr
+    provider_symbol: LLY
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: MCD
+    label: MCD
+    asset_name: McDonald's
+    provider: ibkr
+    provider_symbol: MCD
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: MKC
+    label: MKC
+    asset_name: McCormick & Company
+    provider: ibkr
+    provider_symbol: MKC
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: NEM
+    label: NEM
+    asset_name: Newmont Corporation
+    provider: ibkr
+    provider_symbol: NEM
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: PEP
+    label: PEP
+    asset_name: PepsiCo
+    provider: ibkr
+    provider_symbol: PEP
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: PFE
+    label: PFE
+    asset_name: Pfizer
+    provider: ibkr
+    provider_symbol: PFE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: PM
+    label: PM
+    asset_name: Philip Morris International
+    provider: ibkr
+    provider_symbol: PM
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: V
+    label: V
+    asset_name: Visa
+    provider: ibkr
+    provider_symbol: V
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: AXA
+    label: AXA
+    asset_name: AXA
+    provider: ibkr
+    provider_symbol: CS
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SBF
+    currency: EUR
+  - symbol: JPM
+    label: JPM
+    asset_name: JPMorgan Chase
+    provider: ibkr
+    provider_symbol: JPM
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: SNDK
+    label: SNDK
+    asset_name: Sandisk
+    provider: ibkr
+    provider_symbol: SNDK
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: AKE
+    label: AKE
+    asset_name: Arkema
+    provider: ibkr
+    provider_symbol: AKE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SBF
+    currency: EUR
+  - symbol: BC
+    label: BC
+    asset_name: Brunello Cucinelli
+    provider: ibkr
+    provider_symbol: BC
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: BVME
+    currency: EUR
+  - symbol: BGN
+    label: BGN
+    asset_name: Banca Generali
+    provider: ibkr
+    provider_symbol: BGN
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: BVME
+    currency: EUR
+  - symbol: BN
+    label: BN
+    asset_name: Danone
+    provider: ibkr
+    provider_symbol: BN
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SBF
+    currency: EUR
+  - symbol: BOL
+    label: BOL
+    asset_name: Boliden
+    provider: ibkr
+    provider_symbol: BOL
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SFB
+    currency: SEK
+  - symbol: DSFIR
+    label: DSFIR
+    asset_name: DSM-Firmenich
+    provider: ibkr
+    provider_symbol: DSFIR
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: AEB
+    currency: EUR
+  - symbol: EDEN
+    label: EDEN
+    asset_name: Edenred
+    provider: ibkr
+    provider_symbol: EDEN
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SBF
+    currency: EUR
+  - symbol: ENI
+    label: ENI
+    asset_name: Eni
+    provider: ibkr
+    provider_symbol: ENI
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: BVME
+    currency: EUR
+  - symbol: FRE
+    label: FRE
+    asset_name: Fresenius
+    provider: ibkr
+    provider_symbol: FRE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: IBIS
+    currency: EUR
+  - symbol: GFC
+    label: GFC
+    asset_name: Gecina
+    provider: ibkr
+    provider_symbol: GFC
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SBF
+    currency: EUR
+  - symbol: GLE
+    label: GLE
+    asset_name: Societe Generale
+    provider: ibkr
+    provider_symbol: GLE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SBF
+    currency: EUR
+  - symbol: LDO
+    label: LDO
+    asset_name: Leonardo
+    provider: ibkr
+    provider_symbol: LDO
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: BVME
+    currency: EUR
+  - symbol: LOTB
+    label: LOTB
+    asset_name: Lotus Bakeries
+    provider: ibkr
+    provider_symbol: LOTB
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: ENEXT.BE
+    currency: EUR
+  - symbol: SAF
+    label: SAF
+    asset_name: Safran
+    provider: ibkr
+    provider_symbol: SAF
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SBF
+    currency: EUR
+  - symbol: TE
+    label: TE
+    asset_name: Technip Energies
+    provider: ibkr
+    provider_symbol: TE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: SBF
+    currency: EUR
+  - symbol: CVC
+    label: CVC
+    asset_name: CVC Capital Partners
+    provider: ibkr
+    provider_symbol: CVC
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: AEB
+    currency: EUR
+  - symbol: DTE
+    label: DTE
+    asset_name: Deutsche Telekom
+    provider: ibkr
+    provider_symbol: DTE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: IBIS
+    currency: EUR
+  - symbol: ABBV
+    label: ABBV
+    asset_name: AbbVie
+    provider: ibkr
+    provider_symbol: ABBV
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: AXON
+    label: AXON
+    asset_name: Axon Enterprise
+    provider: ibkr
+    provider_symbol: AXON
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: BX
+    label: BX
+    asset_name: Blackstone
+    provider: ibkr
+    provider_symbol: BX
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: CAH
+    label: CAH
+    asset_name: Cardinal Health
+    provider: ibkr
+    provider_symbol: CAH
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: CBOE
+    label: CBOE
+    asset_name: Cboe Global Markets
+    provider: ibkr
+    provider_symbol: CBOE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: BATS
+    currency: USD
+  - symbol: CCEP
+    label: CCEP
+    asset_name: Coca-Cola Europacific Partners
+    provider: ibkr
+    provider_symbol: CCEP
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: CHRW
+    label: CHRW
+    asset_name: C.H. Robinson Worldwide
+    provider: ibkr
+    provider_symbol: CHRW
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: CMS
+    label: CMS
+    asset_name: CMS Energy
+    provider: ibkr
+    provider_symbol: CMS
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: COST
+    label: COST
+    asset_name: Costco Wholesale
+    provider: ibkr
+    provider_symbol: COST
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: DE
+    label: DE
+    asset_name: Deere & Company
+    provider: ibkr
+    provider_symbol: DE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: DOW
+    label: DOW
+    asset_name: Dow
+    provider: ibkr
+    provider_symbol: DOW
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: ECL
+    label: ECL
+    asset_name: Ecolab
+    provider: ibkr
+    provider_symbol: ECL
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: EME
+    label: EME
+    asset_name: EMCOR Group
+    provider: ibkr
+    provider_symbol: EME
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: ETR
+    label: ETR
+    asset_name: Entergy
+    provider: ibkr
+    provider_symbol: ETR
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: FAST
+    label: FAST
+    asset_name: Fastenal
+    provider: ibkr
+    provider_symbol: FAST
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: FOX
+    label: FOX
+    asset_name: Fox
+    provider: ibkr
+    provider_symbol: FOX
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: HCA
+    label: HCA
+    asset_name: HCA Healthcare
+    provider: ibkr
+    provider_symbol: HCA
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: HPQ
+    label: HPQ
+    asset_name: HP
+    provider: ibkr
+    provider_symbol: HPQ
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: HUBB
+    label: HUBB
+    asset_name: Hubbell
+    provider: ibkr
+    provider_symbol: HUBB
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: IFF
+    label: IFF
+    asset_name: International Flavors & Fragrances
+    provider: ibkr
+    provider_symbol: IFF
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: ISRG
+    label: ISRG
+    asset_name: Intuitive Surgical
+    provider: ibkr
+    provider_symbol: ISRG
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: KMB
+    label: KMB
+    asset_name: Kimberly-Clark
+    provider: ibkr
+    provider_symbol: KMB
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: KR
+    label: KR
+    asset_name: Kroger
+    provider: ibkr
+    provider_symbol: KR
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: LEN
+    label: LEN
+    asset_name: Lennar
+    provider: ibkr
+    provider_symbol: LEN
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: LH
+    label: LH
+    asset_name: Labcorp
+    provider: ibkr
+    provider_symbol: LH
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: MSTR
+    label: MSTR
+    asset_name: MicroStrategy
+    provider: ibkr
+    provider_symbol: MSTR
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: MTB
+    label: MTB
+    asset_name: M&T Bank
+    provider: ibkr
+    provider_symbol: MTB
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: NI
+    label: NI
+    asset_name: NiSource
+    provider: ibkr
+    provider_symbol: NI
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: NKE
+    label: NKE
+    asset_name: Nike
+    provider: ibkr
+    provider_symbol: NKE
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: ORLY
+    label: ORLY
+    asset_name: O'Reilly Automotive
+    provider: ibkr
+    provider_symbol: ORLY
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: PGR
+    label: PGR
+    asset_name: Progressive
+    provider: ibkr
+    provider_symbol: PGR
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: SHOP
+    label: SHOP
+    asset_name: Shopify
+    provider: ibkr
+    provider_symbol: SHOP
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: T
+    label: T
+    asset_name: AT&T
+    provider: ibkr
+    provider_symbol: T
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: TER
+    label: TER
+    asset_name: Teradyne
+    provider: ibkr
+    provider_symbol: TER
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: TKO
+    label: TKO
+    asset_name: TKO Group Holdings
+    provider: ibkr
+    provider_symbol: TKO
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: TMUS
+    label: TMUS
+    asset_name: T-Mobile US
+    provider: ibkr
+    provider_symbol: TMUS
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: UBER
+    label: UBER
+    asset_name: Uber
+    provider: ibkr
+    provider_symbol: UBER
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: VRTX
+    label: VRTX
+    asset_name: Vertex Pharmaceuticals
+    provider: ibkr
+    provider_symbol: VRTX
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: WELL
+    label: WELL
+    asset_name: Welltower
+    provider: ibkr
+    provider_symbol: WELL
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NYSE
+    currency: USD
+  - symbol: ZBRA
+    label: ZBRA
+    asset_name: Zebra Technologies
+    provider: ibkr
+    provider_symbol: ZBRA
+    asset_type: stock
+    exchange: SMART
+    primary_exchange: NASDAQ
+    currency: USD
+  - symbol: BTCUSDT
+    label: BTCUSD
+    asset_name: Bitcoin
+    provider: binance
+    provider_symbol: BTCUSDT
+    asset_type: crypto
+  - symbol: ETHUSDT
+    label: ETHUSD
+    asset_name: Ethereum
+    provider: binance
+    provider_symbol: ETHUSDT
+    asset_type: crypto
+  - symbol: SOLUSDT
+    label: SOLUSD
+    asset_name: Solana
+    provider: binance
+    provider_symbol: SOLUSDT
+    asset_type: crypto
+  - symbol: BNBUSDT
+    label: BNBUSD
+    asset_name: BNB
+    provider: binance
+    provider_symbol: BNBUSDT
+    asset_type: crypto
+  - symbol: XRPUSDT
+    label: XRPUSD
+    asset_name: XRP
+    provider: binance
+    provider_symbol: XRPUSDT
+    asset_type: crypto
+
+symbol_lists:
+  intraday_focus: [SPY, QQQ, GLD, ES, NQ, COR, DD, JPM, SNDK]
+
+patterns:
+  break_in:
+    enabled: true
+    timeframes: [4h, 1d, 1wk, 1mo]
+    ema_fast: 20
+    ema_slow: 50
+    ema_long: 100
+    trend_slope_lookback: 3
+    trend_slope_min_atr: 0.08
+    long_term_trend_slope_lookback: 10
+    long_term_trend_slope_min_atr: 0.02
+    secular_trend_lookbacks: [260, 520, 1040, all]
+    secular_trend_min_score: 2.0
+    support_resistance_lookback: 20
+    support_resistance_lookbacks: [20, 55, 120, 220, all]
+    support_resistance_atr_tolerance: 1.5
+    break_in_level_test_window_bars: 5
+    break_in_trendline_lookbacks: [35, 70, 140, 260, all]
+    break_in_trendline_min_span_bars: 10
+    break_in_trendline_anchor_cluster_bars: 8
+    break_in_trendline_max_context_lines: 4
+    break_in_chart_trendline_max_lines_per_side: 3
+    break_in_chart_trendline_max_distance_atr: 8.0
+    chart_horizontal_level_max_distance_atr: 12.0
+    chart_horizontal_level_max_per_side: 4
+    chart_trendline_min_anchor_age_bars: 8
+    break_in_trendline_min_anchor_move_atr: 0.75
+    break_in_trendline_atr_tolerance: 0.5
+    break_in_target_obstacle_buffer_atr: 0.25
+    break_in_allow_corrective_reclaim: false
+    long_term_level_lookback: 220
+    long_term_level_lookbacks: [55, 120, 220, all]
+    long_term_level_atr_tolerance: 0.75
+    opposing_trendline_lookback: 220
+    opposing_trendline_lookbacks: [120, 220, all]
+    opposing_trendline_pivot_window: 5
+    opposing_trendline_min_span_bars: 40
+    opposing_trendline_atr_tolerance: 0.75
+    long_term_trendline_lookbacks: [120, 260, all]
+    long_term_trendline_min_span_bars: 80
+    break_in_long_term_stop_max_distance_atr: 4.0
+    corrective_trendline_lookbacks: [35, 70, 140, 260, all]
+    corrective_recent_pivot_lookback: 35
+    breakout_close_tolerance_atr: 0.5
+    breakout_max_entry_distance_atr: 0.75
+    master_candle_min_body_to_range: 0.15
+    master_candle_strong_body_to_range: 0.55
+    master_candle_close_zone: 0.25
+    master_candle_uncertainty_body_max: 0.12
+    master_candle_spinning_top_body_max: 0.25
+    master_candle_uncertainty_wick_min: 0.30
+    volume_ratio_min: 1.2
+    minimum_rr: 2.0
+  break_out:
+    enabled: true
+    timeframes: [4h, 1d, 1wk]
+    ema_fast: 20
+    ema_slow: 50
+    ema_long: 100
+    breakout_lookback: 35
+    breakout_lookbacks: [35, 70, 140, 260, all]
+    breakout_recent_pivot_lookback: 35
+    pivot_window: 5
+    atr_period: 20
+    trend_slope_lookback: 3
+    long_term_trend_slope_lookback: 10
+    long_term_trend_slope_min_atr: 0.02
+    secular_trend_lookbacks: [260, 520, 1040, all]
+    secular_trend_min_score: 2.0
+    long_term_level_lookback: 220
+    long_term_level_lookbacks: [55, 120, 220, all]
+    long_term_level_atr_tolerance: 0.75
+    long_term_trendline_lookbacks: [120, 260, all]
+    long_term_trendline_min_span_bars: 80
+    long_term_trendline_obstacle_buffer_atr: 0.5
+    long_term_trendline_reinforcement_max_distance_atr: 4.0
+    long_term_trendline_chart_max_distance_atr: 12.0
+    trend_mode: aligned_or_emerging
+    breakout_window_bars: 5
+    breakout_master_candle_window_bars: 3
+    breakout_signal_valid_window_bars: 3
+    breakout_fib_stop_level: 0.0
+    breakout_fib_target_1_level: 1.0
+    breakout_fib_target_2_level: 1.618
+    breakout_close_tolerance_atr: 0.5
+    breakout_max_entry_distance_atr: 0.75
+    breakout_max_extension_atr: 6.0
+    master_candle_min_body_to_range: 0.15
+    master_candle_strong_body_to_range: 0.55
+    master_candle_close_zone: 0.25
+    master_candle_uncertainty_body_max: 0.12
+    master_candle_spinning_top_body_max: 0.25
+    master_candle_uncertainty_wick_min: 0.30
+    breakout_allow_fallback_target: false
+    breakout_fallback_target_atr: 1.5
+    target_obstacle_lookbacks: [120, 260, all]
+    target_obstacle_buffer_atr: 0.25
+    breakout_chart_trendline_max_lines_per_side: 3
+    breakout_chart_trendline_max_distance_atr: 8.0
+    chart_horizontal_level_max_distance_atr: 12.0
+    chart_horizontal_level_max_per_side: 4
+    minimum_rr: 1.5
+  bollinger_reversion:
+    enabled: true
+    timeframes: [1h]
+    symbol_list: intraday_focus
+    long_only: true
+    bb_period: 100
+    bb_stddev: 2.0
+    master_candle_min_body_to_range: 0.15
+    master_candle_strong_body_to_range: 0.55
+    master_candle_close_zone: 0.25
+    master_candle_uncertainty_body_max: 0.12
+    master_candle_spinning_top_body_max: 0.25
+    master_candle_uncertainty_wick_min: 0.30
+    atr_filter_period: 5
+    atr_filter_reference_lookback: 5
+    atr_filter_max_multiplier: 1.5
+    minimum_filter_checks: 1
+    donchian_period: 100
+    donchian_reference_lookback: 100
+    stop_lookback: 5
+    momentum_lookback: 10
+    super_candle_lookback: 100
+    super_candle_body_to_range_min: 0.2
+    # The Excel position model allocates no risk below this threshold.
+    minimum_rr: 1.5
