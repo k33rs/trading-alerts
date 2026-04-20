@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading-alert-bot"
+version = "0.1.0"
+description = "Multi-timeframe trading scanner with Telegram alerts"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ib-insync>=0.9.86",
+    "matplotlib>=3.9.0",
+    "pandas>=2.2.2",
+    "PyYAML>=6.0.1",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.3",
+    "tzdata>=2025.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+trading-bot = "trading_bot.main:main"
+trading-universe = "trading_bot.universe_service:main"
+trading-backtest = "trading_bot.backtest:main"
+trading-review = "trading_bot.review:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,23 @@
+services:
+  universe:
+    build: .
+    command: ["trading-universe", "--account-mode", "paper_gateway", "--interval-seconds", "14400"]
+    env_file: .env
+    environment:
+      IBKR_HOST: host.docker.internal
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  bot:
+    build: .
+    command: ["trading-bot", "--account-mode", "paper_gateway"]
+    depends_on:
+      universe:
+        condition: service_started
+    env_file: .env
+    environment:
+      IBKR_HOST: host.docker.internal
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
